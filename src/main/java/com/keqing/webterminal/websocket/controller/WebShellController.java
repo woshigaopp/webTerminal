@@ -1,4 +1,4 @@
-package com.keqing.webterminal.controller;
+package com.keqing.webterminal.websocket.controller;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;

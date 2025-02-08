@@ -1,6 +1,7 @@
-package com.keqing.webterminal.service;
+package com.keqing.webterminal.websocket.service;
 
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,6 +13,7 @@ import java.util.function.Consumer;
 /**
  * @author keqing@date 2025/02/05
  */
+@Slf4j
 @Data
 public class WebSocketClient {
 
@@ -30,6 +32,7 @@ public class WebSocketClient {
 
     /**
      * 连接TTyd
+     *
      * @param url TTyd 的启动地址
      */
     public void initConnection(String url) {
@@ -66,11 +69,30 @@ public class WebSocketClient {
 
                         return WebSocket.Listener.super.onBinary(webSocket, data, last);
                     }
+
+                    @Override
+                    public CompletionStage<?> onPong(WebSocket webSocket, ByteBuffer message) {
+                        log.info("onPong :{}", message);
+                        return WebSocket.Listener.super.onPong(webSocket, message);
+                    }
+
+                    @Override
+                    public CompletionStage<?> onPing(WebSocket webSocket, ByteBuffer message) {
+                        log.info("onPing :{}", message);
+                        return WebSocket.Listener.super.onPing(webSocket, message);
+                    }
+
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        log.info("onClose :{}", reason);
+                        return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
+                    }
                 }).join();
     }
 
     /**
      * 发送消息
+     *
      * @param message 发送消息到TTyd
      */
     public void send(ByteBuffer message) {
@@ -87,6 +109,7 @@ public class WebSocketClient {
 
     /**
      * 接受到TTyd的消息后，定义的回调接口
+     *
      * @param callback 回调接口
      */
     public void registerOnBinaryMessageCallback(Consumer<byte[]> callback) {

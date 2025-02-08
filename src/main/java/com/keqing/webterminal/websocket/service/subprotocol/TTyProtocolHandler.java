@@ -1,44 +1,35 @@
-package com.keqing.webterminal.service;
+package com.keqing.webterminal.websocket.service.subprotocol;
 
+import com.keqing.webterminal.websocket.service.WebSocketClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.web.socket.*;
+import org.springframework.web.socket.messaging.SubProtocolHandler;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
- * @author keqing@date 2025/02/05
+ * @author keqing
  */
 @Slf4j
-@Component
-public class WebShellSocketHandler implements WebSocketHandler {
+public class TTyProtocolHandler implements SubProtocolHandler {
 
     /**
      * 保存websocket连接map 保存websocketClient和websocket session的对应关系
      */
     private static final Map<String, WebSocketClient> WEB_SOCKET_CLIENT_MAP = new HashMap<>();
 
-    /**
-     * @param session websocket session
-     */
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
-        WebSocketClient client = new WebSocketClient();
-        client.initConnection("ws://localhost:7777/ws");
-        WEB_SOCKET_CLIENT_MAP.put(session.getId(), client);
-        log.info("connection established");
+    public List<String> getSupportedProtocols() {
+        return Collections.singletonList("tty");
     }
 
-    /**
-     * @param session websocket session
-     * @param message websocket message
-     */
     @Override
-    public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) {
+    public void handleMessageFromClient(WebSocketSession session, WebSocketMessage<?> message, MessageChannel outputChannel) throws Exception {
         if (message instanceof TextMessage) {
             try {
                 log.info("webShell received text: {}", message.getPayload());
@@ -91,13 +82,25 @@ public class WebShellSocketHandler implements WebSocketHandler {
             }
             WebSocketClient client = WEB_SOCKET_CLIENT_MAP.get(session.getId());
             // Connect to the other server and send the received message
+            // 将从客户端接收到的数据发送给TTyd
             client.send((ByteBuffer) message.getPayload());
+
+            ByteBuffer byteMsg = (ByteBuffer) message.getPayload();
+
+            //进行解码后进行log采集和上云
+            String decodeSendMsg = new String(byteMsg.array(), 1, byteMsg.array().length - 1, StandardCharsets.UTF_8);
+            log.info("send message to TTyd: {}", decodeSendMsg);
 
             // Register a callback to forward the response back to this server's client
             client.registerOnBinaryMessageCallback((responseMsg) -> {
                 try {
+                    // 接收TTyd的返回结果，返回客户端
                     // Relay the response from the other server back to this server's client
                     session.sendMessage(new BinaryMessage(responseMsg));
+
+                    //进行解码后进行log采集和上云
+                    String decodeRecMsg = new String(responseMsg, 1, responseMsg.length - 1, StandardCharsets.UTF_8);
+                    log.info("received message to TTyd: {}", decodeRecMsg);
                 } catch (IOException e) {
                     log.error("Failed to send message to client", e);
                 }
@@ -107,29 +110,27 @@ public class WebShellSocketHandler implements WebSocketHandler {
         }
     }
 
-    /**
-     * @param session websocket session
-     * @param exception 捕获的异常
-     */
     @Override
-    public void handleTransportError(WebSocketSession session, Throwable exception) {
-        log.error("webShell handleTransportError error", exception);
+    public void handleMessageToClient(WebSocketSession session, Message<?> message) throws Exception {
     }
 
-    /**
-     * @param session websocket session
-     * @param closeStatus websocket 连接关闭的错误码
-     */
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) {
-        log.info("webShell closed");
+    public String resolveSessionId(Message<?> message) {
+        return UUID.randomUUID().toString();
     }
 
-    /**
-     * @return boolean
-     */
     @Override
-    public boolean supportsPartialMessages() {
-        return false;
+    public void afterSessionStarted(WebSocketSession session, MessageChannel outputChannel) throws Exception {
+        WebSocketClient client = new WebSocketClient();
+        client.initConnection("ws://localhost:7777/ws");
+        WEB_SOCKET_CLIENT_MAP.put(session.getId(), client);
+        log.info("connection established");
+    }
+
+    @Override
+    public void afterSessionEnded(WebSocketSession session, CloseStatus closeStatus, MessageChannel outputChannel) throws Exception {
+        WebSocketClient client = WEB_SOCKET_CLIENT_MAP.get(session.getId());
+        client.getWebSocket().sendClose(closeStatus.getCode(), "aa");
+        log.info("webShell closed status code: {}, reason:{}", closeStatus.getCode(), closeStatus.getReason());
     }
 }
